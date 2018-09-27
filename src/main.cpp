@@ -6,34 +6,36 @@
 #include <Adafruit_MMA8451.h>
 #include <Adafruit_Sensor.h>
 #include <sstream>
-
 /*
 SD wiring:
-** MOSI - pin 11
+** MOSI - pin 11 [to pin 15]
 ** MISO - pin 12
 ** CLK - pin 13
-** CS - pin 7 (for MKRZero SD: SDCARD_SS_PIN)
+** CS - pin 7 (for MKRZero SD: SDCARD_SS_PIN) [to pin 0]
 
 Valve wiring:
 - to GND, + to valvePin
 
 MMA wiring:
-4 = SDA
-5 = SCL
+5 = SDA
+4 = SCL
 
 */
-const int chipSelect = 7;
-const int valvePin = 8;
+const int chipSelect = 0;
+const int valvePin = 16;
 
 const char PSK[] = "spaceshot";
 const char AP_SSID[] = "CO2GroundTest";
 
+boolean recording = false;
+
 Adafruit_MMA8451 mma = Adafruit_MMA8451();
-sensors_event_t event;
+
 WiFiServer server(80);
 
 void setup() {
-
+  delay(5000);
+  Serial.println("begin setup...");
   Serial.begin(115200);
 
   pinMode(valvePin, OUTPUT);
@@ -51,15 +53,16 @@ void setup() {
 
   server.begin();
 
-  if (!SD.begin(chipSelect)) {
+  if (!SD.begin(chipSelect))
     Serial.println("SD Card failed");
-  }
+  else
   Serial.println("SD Card initialized.");
 
 
-  if (! mma.begin()) {
-     Serial.println("Couldnt start MMA");
-   }
+  if (! mma.begin())
+  {   Serial.println("Couldnt start MMA");
+     return;}
+   else
    Serial.println("MMA8451 found!");
    mma.setRange(MMA8451_RANGE_2_G);
 }
@@ -73,16 +76,29 @@ void handleWifi()
       String req = client.readStringUntil('\r');
       client.flush();
       String resp = "";
-
-      if (req.indexOf("/open") != -1)
+      if (req.indexOf("/data_start") != -1)
       {
-        digitalWrite(valvePin, 0);
+        Serial.println("starting data");
+        recording=true;
+        httputils::HTTPRespond(client, "starting data");
+      }
+      else if (req.indexOf("/open") != -1)
+      {
+        Serial.println("opening valve");
+        digitalWrite(valvePin, 1);
         httputils::HTTPRespond(client, "opened");
       }
-      else if (req.indexOf("/closed") != -1)
+      else if (req.indexOf("/close") != -1)
       {
-        digitalWrite(valvePin, 1);
+        Serial.println("closing valve");
+        digitalWrite(valvePin, 0);
         httputils::HTTPRespond(client, "closed");
+      }
+      else if (req.indexOf("/data_stop") != -1)
+      {
+        Serial.println("stopping data");
+        recording = false;
+        httputils::HTTPRespond(client, "stopping data");
       }
     }
     // put your main code here, to run repeatedly:
@@ -90,15 +106,17 @@ void handleWifi()
 
 String getMMAData()
 {
+  sensors_event_t event;
+  mma.read();
 mma.getEvent(&event);
 String buf;
-buf+=F("a_x: ");
+buf+="a_x: ";
 buf+=String(event.acceleration.x,6);
-buf+=F(",a_y: ");
+buf+=",a_y: ";
 buf+=String(event.acceleration.y,6);
-buf+=F(",a_z: ");
+buf+=",a_z: ";
 buf+=String(event.acceleration.z,6);
-buf+=F("\n");
+buf+="\n";
 return buf;
 
 }
@@ -129,6 +147,8 @@ void loop() {
 
   handleWifi();
   String data = getMMAData();
-  logToSD(data);
+  Serial.println(data);
+  delay(1000);
+    //logToSD(data);
 
 }
