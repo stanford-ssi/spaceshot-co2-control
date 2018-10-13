@@ -6,10 +6,6 @@
 #include <Adafruit_MMA8451.h>
 #include <Adafruit_Sensor.h>
 #include <sstream>
-
-#include <ESPAsyncTCP.h>
-#include <DNSServer.h>
-#include <vector>
 /*
 SD wiring:
 ** MOSI - pin 11 [to pin 15]
@@ -28,10 +24,6 @@ MMA wiring:
 const int chipSelect = 0;
 const int valvePin = 16;
 
-#define SERVER_HOST_NAME "StabilityTest"
-#define TCP_PORT 7050
-#define DNS_PORT 53
-
 const char PSK[] = "spaceshot";
 const char AP_SSID[] = "CO2GroundTest";
 
@@ -40,81 +32,6 @@ boolean recording = false;
 Adafruit_MMA8451 mma = Adafruit_MMA8451();
 
 WiFiServer server(80);
-
-static DNSServer DNS;
-
-static AsyncClient* curr_client;
-
- /* clients events */
-static void handleError(void* arg, AsyncClient* client, int8_t error) {
-	Serial.printf("\n connection error %s from client %s \n", client->errorToString(error), client->remoteIP().toString().c_str());
-}
-
-static void handleData(void* arg, AsyncClient* client, void *data, size_t len) {
-	Serial.printf("\n data received from client %s \n", client->remoteIP().toString().c_str());
-	Serial.write((uint8_t*)data, len);
-
-  int cmd = *(int*)data;
-
-  switch(cmd)
-  {
-    case 0:
-    recording=true;
-    break;
-    case 1:
-    recording=false;
-    break;
-    case 2:
-    digitalWrite(valvePin,1);
-    break;
-    case 3:
-    digitalWrite(valvePin,0);
-    break;
-    default:
-    break;
-  }
-}
-
-static void handleDisconnect(void* arg, AsyncClient* client) {
-	Serial.printf("\n client %s disconnected \n", client->remoteIP().toString().c_str());
-}
-
-static void handleTimeOut(void* arg, AsyncClient* client, uint32_t time) {
-	Serial.printf("\n client ACK timeout ip: %s \n", client->remoteIP().toString().c_str());
-}
-
-
-/* server events */
-static void handleNewClient(void* arg, AsyncClient* client) {
-	Serial.printf("\n new client has been connected to server, ip: %s", client->remoteIP().toString().c_str());
-
-	// make accessible
-	curr_client = client;
-
-	// register events
-	client->onData(&handleData, NULL);
-	client->onError(&handleError, NULL);
-	client->onDisconnect(&handleDisconnect, NULL);
-	client->onTimeout(&handleTimeOut, NULL);
-}
-
-String getMMAData()
-{
-  sensors_event_t event;
-  mma.read();
-mma.getEvent(&event);
-String buf;
-buf+="a_x: ";
-buf+=String(event.acceleration.x,6);
-buf+=",a_y: ";
-buf+=String(event.acceleration.y,6);
-buf+=",a_z: ";
-buf+=String(event.acceleration.z,6);
-buf+="\n";
-return buf;
-
-}
-
 
 void setup() {
   delay(5000);
@@ -134,14 +51,13 @@ void setup() {
   WiFi.softAPConfig(ip, gateway, subnet);
   WiFi.softAP(AP_SSID, PSK);
 
+  server.begin();
 
-	// start dns server
-	if (!DNS.start(DNS_PORT, SERVER_HOST_NAME, WiFi.softAPIP()))
-		Serial.printf("\n failed to start dns service \n");
+  if (!SD.begin(chipSelect))
+    Serial.println("SD Card failed");
+  else
+  Serial.println("SD Card initialized.");
 
-	AsyncServer* server = new AsyncServer(TCP_PORT); // start listening on tcp port 7050
-	server->onClient(&handleNewClient, server);
-	server->begin();
 
   if (! mma.begin())
   {   Serial.println("Couldnt start MMA");
@@ -152,20 +68,87 @@ void setup() {
 }
 
 
+void handleWifi()
+{
+    WiFiClient client = server.available();
+    if (client)
+    {
+      String req = client.readStringUntil('\r');
+      client.flush();
+      String resp = "";
+      if (req.indexOf("/data_start") != -1)
+      {
+        Serial.println("starting data");
+        recording=true;
+        httputils::HTTPRespond(client, "starting data");
+      }
+      else if (req.indexOf("/open") != -1)
+      {
+        Serial.println("opening valve");
+        digitalWrite(valvePin, 1);
+        httputils::HTTPRespond(client, "opened");
+      }
+      else if (req.indexOf("/close") != -1)
+      {
+        Serial.println("closing valve");
+        digitalWrite(valvePin, 0);
+        httputils::HTTPRespond(client, "closed");
+      }
+      else if (req.indexOf("/data_stop") != -1)
+      {
+        Serial.println("stopping data");
+        recording = false;
+        httputils::HTTPRespond(client, "stopping data");
+      }
+    }
+    // put your main code here, to run repeatedly:
+}
+
+String getMMAData()
+{
+  sensors_event_t event;
+  mma.read();
+mma.getEvent(&event);
+String buf;
+buf+="a_x: ";
+buf+=String(event.acceleration.x,6);
+buf+=",a_y: ";
+buf+=String(event.acceleration.y,6);
+buf+=",a_z: ";
+buf+=String(event.acceleration.z,6);
+buf+="\n";
+return buf;
+
+}
+
+void logToSD(String dataString)
+{
+
+// open the file. note that only one file can be open at a time,
+// so you have to close this one before opening another.
+File dataFile = SD.open("datalog.txt", FILE_WRITE);
+
+// if the file is available, write to it:
+if (dataFile) {
+  dataFile.println(dataString);
+  dataFile.close();
+  // print to the serial port too:
+  Serial.println(dataString);
+}
+// if the file isn't open, pop up an error:
+else {
+  Serial.println("error opening datalog.txt");
+}
+
+}
+
 
 void loop() {
-  DNS.processNextRequest();
+
+  handleWifi();
   String data = getMMAData();
-  char data_array[data.length()+1];
-  strcpy(data_array, data.c_str());
-  if(recording==true)
-  {
-    if (curr_client->space() > strlen(data_array) && curr_client->canSend()) {
-      curr_client->add(data_array, strlen(data_array));
-      curr_client->send();
-    }
-  }
-  //delay();
+  Serial.println(data);
+  delay(1000);
     //logToSD(data);
 
 }
