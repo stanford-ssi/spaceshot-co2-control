@@ -3,12 +3,13 @@
 #include "HTTPUtils.hpp"
 #include <SPI.h>
 #include <SD.h>
+#include <Wire.h>
 #include <Adafruit_MMA8451.h>
 #include <Adafruit_Sensor.h>
 #include <sstream>
 /*
 SD wiring:
-** MOSI - pin 11 [to pin 15]
+** MOSI - pi\n 11 [to pin 15]
 ** MISO - pin 12
 ** CLK - pin 13
 ** CS - pin 7 (for MKRZero SD: SDCARD_SS_PIN) [to pin 0]
@@ -21,9 +22,8 @@ MMA wiring:
 4 = SCL
 
 */
-const int chipSelect = 0;
+const int chipSelect = 15;
 const int valvePin = 16;
-
 const char PSK[] = "spaceshot";
 const char AP_SSID[] = "CO2GroundTest";
 
@@ -34,7 +34,7 @@ Adafruit_MMA8451 mma = Adafruit_MMA8451();
 WiFiServer server(80);
 
 void setup() {
-  delay(5000);
+  delay(10000);
   Serial.println("begin setup...");
   Serial.begin(115200);
 
@@ -56,12 +56,14 @@ void setup() {
   if (!SD.begin(chipSelect))
     Serial.println("SD Card failed");
   else
+  {
   Serial.println("SD Card initialized.");
 
+  }
 
   if (! mma.begin())
-  {   Serial.println("Couldnt start MMA");
-     return;}
+  {   Serial.println("Couldn't start MMA");
+  }
    else
    Serial.println("MMA8451 found!");
    mma.setRange(MMA8451_RANGE_2_G);
@@ -127,13 +129,12 @@ void logToSD(String dataString)
 // open the file. note that only one file can be open at a time,
 // so you have to close this one before opening another.
 File dataFile = SD.open("datalog.txt", FILE_WRITE);
-
 // if the file is available, write to it:
 if (dataFile) {
   dataFile.println(dataString);
   dataFile.close();
   // print to the serial port too:
-  Serial.println(dataString);
+  Serial.println("logging data:" + dataString);
 }
 // if the file isn't open, pop up an error:
 else {
@@ -148,7 +149,7 @@ void loop() {
   handleWifi();
   String data = getMMAData();
   Serial.println(data);
+  //logToSD(data);
   delay(1000);
-    //logToSD(data);
 
 }

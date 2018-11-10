@@ -99,7 +99,6 @@ Adafruit_MMA8451::Adafruit_MMA8451(int32_t sensorID) {
 */
 /**************************************************************************/
 bool Adafruit_MMA8451::begin(uint8_t i2caddr) {
-  Serial.println("set wire");
   Wire.begin(5,4);
   _i2caddr = i2caddr;
 
@@ -108,7 +107,7 @@ bool Adafruit_MMA8451::begin(uint8_t i2caddr) {
   if (deviceid != 0x1A)
   {
     /* No MMA8451 detected ... return false */
-    Serial.println(deviceid, HEX);
+    //Serial.println(deviceid, HEX);
     return false;
   }
 
